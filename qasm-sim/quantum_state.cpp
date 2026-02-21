@@ -4,9 +4,14 @@
 
 static constexpr double EPS = 1e-12;
 
+void SampleResult::log_results() {
+	std::println("0 measured {} times\n1 measured {} times", results[0], results[1]);
+}
+
 QuantumState::QuantumState(size_t num_qubits = 1, size_t init_state = 0) {
 	std::random_device rd;
 	rng = std::mt19937(rd());
+	uni = std::uniform_real_distribution(0.0, 1.0);
 	init(num_qubits, init_state);
 }
 
@@ -17,34 +22,60 @@ void QuantumState::init(size_t num_qubits, size_t init_state) {
 	psi[init_state] = Complex(1.0, 0.0);
 }
 
-size_t QuantumState::measure(size_t qubit) {
+std::array<double, 2> QuantumState::measurement_probs(size_t qubit) const {
 	size_t bit = 1ULL << qubit;
-	double prob[2] = { 0.0, 0.0 };
+	std::array<double, 2> prob = { 0.0, 0.0 };
 
 	for (size_t i = 0; i < psi.size(); i++) {
 		prob[((i & bit) != 0)] += std::norm(psi[i]);
 	}
 
-	size_t res;
 	if (prob[0] < EPS && prob[1] < EPS) {
-		// something went wrong, will see later
-		return 0;
+		throw std::runtime_error("At least one probability must be non-zero");
 	}
 	else if (prob[0] < EPS) {
-		res = 1;
+		prob[0] = 0.0;
+		prob[1] = 1.0;
 	}
 	else if (prob[1] < EPS) {
-		res = 0;
+		prob[0] = 1.0;
+		prob[1] = 0.0;
 	}
 	else {
-		std::discrete_distribution<size_t> dist({prob[0], prob[1]});
-		res = dist(rng);
+		const double norm = 1 / (prob[0] + prob[1]);
+		prob[0] *= norm;
+		prob[1] *= norm;
 	}
 
-	double scale = 1.0 / std::sqrt(prob[res]);
+	return prob;
+}
+
+inline size_t QuantumState::sample_measurement_once(double p1) {
+	double u = uni(rng);
+	return (u < p1) ? 1 : 0;
+}
+
+SampleResult QuantumState::sample_measurement(size_t qubit, size_t num_samples) {
+	auto prob = measurement_probs(qubit);
+	SampleResult res;
+
+	for (size_t i = 0; i < num_samples; i++) {
+		res.results[sample_measurement_once(prob[1])]++;
+	}
+
+	return res;
+}
+
+size_t QuantumState::measure(size_t qubit) {
+	auto prob = measurement_probs(qubit);
+	size_t res = sample_measurement_once(prob[1]);
+
+	size_t bit = 1ULL << qubit;
+	double scl = 1.0 / std::sqrt(prob[res]);
+
 	for (size_t i = 0; i < psi.size(); i++) {
 		if (((i & bit) != 0) == res) {
-			psi[i] *= scale;
+			psi[i] *= scl;
 		}
 		else {
 			psi[i] = Complex(0.0, 0.0);
@@ -54,7 +85,6 @@ size_t QuantumState::measure(size_t qubit) {
 	return res;
 }
 
-// measure the system and collapse the wavefunction
 size_t QuantumState::measure_all() {
 	std::vector<size_t> outcomes;
 	std::vector<double> weights;
@@ -84,9 +114,23 @@ size_t QuantumState::measure_all() {
 	return res;
 }
 
-void QuantumState::apply_hadamard(size_t qubit) {
-	const double scl = 1.0 / std::sqrt(2);
+void QuantumState::apply_unitary_1q(size_t qubit, Complex u00, Complex u01, Complex u10, Complex u11) {
 	size_t bit = 1ULL << qubit;
+
+	for (size_t i = 0; i < psi.size(); i++) {
+		if ((i & bit) == 0) {
+			size_t j = i | bit;
+			Complex a = psi[i];
+			Complex b = psi[j];
+			psi[i] = (u00 * a) + (u01 * b);
+			psi[j] = (u10 * a) + (u11 * b);
+		}
+	}
+}
+
+void QuantumState::apply_hadamard(size_t qubit) {
+	size_t bit = 1ULL << qubit;
+	const double scl = 1.0 / std::sqrt(2);
 
 	for (size_t i = 0; i < psi.size(); i++) {
 		if ((i & bit) == 0) {
@@ -110,14 +154,63 @@ void QuantumState::apply_s(size_t qubit) {
 }
 
 void QuantumState::apply_cnot(size_t cntrl, size_t qubit) {
+	size_t bit = 1ULL << qubit;
 	size_t control_bit = 1ULL << cntrl;
-	size_t q_bit = 1ULL << qubit;
 
 	for (size_t i = 0; i < psi.size(); i++) {
-		if ((i & control_bit) != 0 && (i & q_bit) == 0) {
+		if ((i & control_bit) != 0 && (i & bit) == 0) {
 			Complex tmp = psi[i];
-			psi[i] = psi[i | q_bit];
-			psi[i | q_bit] = tmp;
+			psi[i] = psi[i | bit];
+			psi[i | bit] = tmp;
+		}
+	}
+}
+
+void QuantumState::apply_x(size_t qubit) {
+	size_t bit = 1ULL << qubit;
+
+	for (size_t i = 0; i < psi.size(); i++) {
+		if ((i & bit) == 0) {
+			Complex tmp = psi[i];
+			psi[i] = psi[i | bit];
+			psi[i | bit] = tmp;
+		}
+	}
+}
+
+void QuantumState::apply_y(size_t qubit) {
+	size_t bit = 1ULL << qubit;
+	const Complex I(0.0, 1.0);
+
+	for (size_t i = 0; i < psi.size(); i++) {
+		if ((i & bit) == 0) {
+			Complex tmp = psi[i];
+			psi[i] = -I * psi[i | bit];
+			psi[i | bit] = I * tmp;
+		}
+	}
+}
+
+void QuantumState::apply_z(size_t qubit) {
+	size_t bit = 1ULL << qubit;
+
+	for (size_t i = 0; i < psi.size(); i++) {
+		if ((i & bit) != 0) {
+			psi[i] *= -1;
+		}
+	}
+}
+
+void QuantumState::apply_toffoli(size_t cntrl1, size_t cntrl2, size_t qubit) {
+	size_t bit = 1ULL << qubit;
+	size_t control_bit1 = 1ULL << cntrl1;
+	size_t control_bit2 = 1ULL << cntrl2;
+
+	for (size_t i = 0; i < psi.size(); i++) {
+		if ((i & control_bit1) != 0 && (i & control_bit2) != 0 && (i & bit) == 0) {
+			Complex tmp = psi[i];
+			psi[i] = psi[i | bit];
+			psi[i | bit] = tmp;
 		}
 	}
 }

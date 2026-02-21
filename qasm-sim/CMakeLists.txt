@@ -3,7 +3,7 @@
 #
 
 # Add source to this project's executable.
-add_executable (qasm-sim "simulator.cpp"  "lexer.cpp" "parser.cpp" "include/lexer.h" "include/gates.h" "include/quantum_state.h" "quantum_state.cpp" "include/circuit.h" "circuit.cpp")
+add_executable (qasm-sim "simulator.cpp"  "lexer.cpp" "parser.cpp" "include/lexer.h"  "include/quantum_state.h" "quantum_state.cpp" "include/circuit.h" "circuit.cpp" "include/stabilizer.h" "demos.cpp" "include/demos.h")
 
 target_include_directories(qasm-sim PRIVATE include)
 
