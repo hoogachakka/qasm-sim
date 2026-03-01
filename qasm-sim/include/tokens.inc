@@ -1,0 +1,15 @@
+#include "keywords.inc"
+#include "symbols.inc"
+DEF_TOK(VERSION_ID, "")
+DEF_TOK(DEC_LIT, "")
+DEF_TOK(HEX_LIT, "")
+DEF_TOK(BIN_LIT, "")
+DEF_TOK(OCT_LIT, "")
+DEF_TOK(FLOAT_LIT, "")
+DEF_TOK(BOOL_LIT, "")
+DEF_TOK(STR_LIT, "")
+DEF_TOK(BITSTR_LIT, "")
+DEF_TOK(TIME_LIT, "")
+DEF_TOK(IMAG_LIT_DEC, "")
+DEF_TOK(IMAG_LIT_FLOAT, "")
+DEF_TOK(IDENT, "")
